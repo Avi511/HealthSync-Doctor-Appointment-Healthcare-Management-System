@@ -11,8 +11,6 @@ import com.avishka.userservice.repository.OtpVerificationRepository;
 import com.avishka.userservice.repository.UserRepository;
 import com.avishka.userservice.service.UserService;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
-import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpEntity;
@@ -23,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +55,7 @@ public class UserServiceImpl implements UserService {
 
     private void generateAndSendOtp(String email) {
         String otpCode = String.format("%06d", new Random().nextInt(999999));
-        
+
         OtpVerification otpVerification = OtpVerification.builder()
                 .email(email)
                 .otpCode(otpCode)
@@ -71,7 +68,8 @@ public class UserServiceImpl implements UserService {
         System.out.println("🔑 HEALTHSYNC OTP FOR " + email + " IS: " + otpCode);
         System.out.println("==================================================\n");
 
-        sendEmail(email, "HealthSync Verification Code", "Your OTP code is: " + otpCode + ". It expires in 10 minutes.");
+        sendEmail(email, "HealthSync Verification Code",
+                "Your OTP code is: " + otpCode + ". It expires in 10 minutes.");
     }
 
     private void sendEmail(String to, String subject, String message) {
@@ -79,12 +77,12 @@ public class UserServiceImpl implements UserService {
             try {
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
-                
+
                 Map<String, String> requestBody = new HashMap<>();
                 requestBody.put("to", to);
                 requestBody.put("subject", subject);
                 requestBody.put("message", message);
-                
+
                 HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
                 restTemplate.postForObject("http://localhost:8085/api/notifications/email", request, Object.class);
             } catch (Exception e) {
@@ -111,12 +109,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse googleLogin(String tokenId) throws Exception {
-        // Parse the token offline to avoid outbound HTTP calls which can hang in firewalled environments
+        // Parse the token offline to avoid outbound HTTP calls which can hang in
+        // firewalled environments
         GoogleIdToken idToken = GoogleIdToken.parse(new GsonFactory(), tokenId);
 
         if (idToken != null) {
             GoogleIdToken.Payload payload = idToken.getPayload();
-            
+
             // Validate the Client ID (audience or authorized party) offline
             Object audience = payload.getAudience();
             boolean audMatch = audience != null && audience.toString().equals(GOOGLE_CLIENT_ID);
@@ -126,7 +125,7 @@ public class UserServiceImpl implements UserService {
             }
 
             String email = payload.getEmail();
-            
+
             User user = userRepository.findByEmail(email).orElse(null);
             if (user == null) {
                 // Register the user
@@ -134,22 +133,25 @@ public class UserServiceImpl implements UserService {
                 user.setEmail(email);
                 user.setFirstName((String) payload.get("given_name"));
                 user.setLastName((String) payload.get("family_name"));
-                if (user.getFirstName() == null) user.setFirstName("Google");
-                if (user.getLastName() == null) user.setLastName("User");
-                
+                if (user.getFirstName() == null)
+                    user.setFirstName("Google");
+                if (user.getLastName() == null)
+                    user.setLastName("User");
+
                 // Set defaults for required fields
                 user.setPassword(passwordEncoder.encode("google-sso-random-pw-" + new Random().nextInt()));
                 user.setRole("PATIENT");
                 user.setPhone("N/A");
                 user.setAddress("N/A");
                 user.setVerified(false);
-                
+
                 user = userRepository.save(user);
-                
+
                 // Trigger OTP
                 generateAndSendOtp(user.getEmail());
-                
-                throw new IllegalArgumentException("User created via Google but not verified. Please check your email for the OTP.");
+
+                throw new IllegalArgumentException(
+                        "User created via Google but not verified. Please check your email for the OTP.");
             } else if (!user.isVerified()) {
                 // Resend OTP
                 generateAndSendOtp(user.getEmail());
